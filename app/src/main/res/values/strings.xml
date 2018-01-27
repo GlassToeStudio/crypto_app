@@ -1,0 +1,10 @@
+<resources>
+    <string name="app_name">Crypto</string>
+    <string name="action_settings">Settings</string>
+    <string name="fsym_default">BTC</string>
+    <string name="tsym_default">USD</string>
+    <string name="output_default">...</string>
+    <string name="price_button_default">Get Price</string>
+    <string name="a_button">A button</string>
+    <string name="todo">TODO</string>
+</resources>
