@@ -1,27 +1,22 @@
 package com.glasstoestudio.crypto;
 
-import android.content.Intent;
 import android.content.res.Resources;
 import android.graphics.Bitmap;
-import android.net.Uri;
 import android.os.Bundle;
 import android.support.design.widget.FloatingActionButton;
 import android.support.design.widget.Snackbar;
 import android.support.v7.app.AppCompatActivity;
 import android.support.v7.widget.Toolbar;
-import android.text.Editable;
-import android.text.TextWatcher;
 import android.util.Log;
 import android.view.View;
 import android.view.Menu;
 import android.view.MenuItem;
-import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.AutoCompleteTextView;
 import android.widget.Button;
 import android.widget.EditText;
-import android.widget.ImageButton;
 import android.widget.ImageView;
+import android.widget.ListView;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -37,31 +32,32 @@ import org.json.JSONObject;
 
 public class MainActivity extends AppCompatActivity {
 
+    private static final String COIN_LIST_URL = "https://www.cryptocompare.com/api/data/coinlist/";
+
     Button getPriceButton;
-    //ImageButton cryptoCompareAPIButton;
     TextView outPutTextView;
     EditText fsymText;
     EditText tsymText;
     ImageView coinImage;
     AutoCompleteTextView acTextView;
 
-    //https://www.cryptocompare.com/api/data/coinsnapshotfullbyid/?id=1182 for BTC, 7605 for ETH
-    private static final String COIN_LIST_URL = "https://www.cryptocompare.com/api/data/coinlist/";
-    String url_string = "https://min-api.cryptocompare.com/data/price?fsym=";
-    String full_id_url = "https://www.cryptocompare.com/api/data/coinsnapshotfullbyid/?id=";
-    String full_id_url_complete = "";
-    String coinImage_url = "https://www.cryptocompare.com";
-    String fsym = "BTC";
-    String tsym = "USD";
+    // Slide bar thing
+    ListView mDrawerList;
+    ArrayAdapter<String> mAdapter;
+
     String complete_url = "";
-    String coinID = "";
-    JSONObject r_object = new JSONObject();
+    JSONObject allCoinData = new JSONObject();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
+        //Not my shit
+        Toolbar toolbar = (Toolbar) findViewById(R.id.toolbar);
+        setSupportActionBar(toolbar);
+
+        // Test the autoScrollText
         Resources res = getResources();
         String[] coin_symbols = res.getStringArray(R.array.symbols_array);
         acTextView = (AutoCompleteTextView) findViewById(R.id.autoCompleteTextView);
@@ -71,60 +67,52 @@ public class MainActivity extends AppCompatActivity {
         acTextView.setThreshold(1);
         acTextView.setDropDownWidth(300);
 
-        Toolbar toolbar = (Toolbar) findViewById(R.id.toolbar);
-        setSupportActionBar(toolbar);
-
+        // Actually my stuff
         outPutTextView = (TextView)findViewById(R.id.priceText);
         getPriceButton = (Button)findViewById(R.id.getPrice);
         fsymText = (EditText)findViewById(R.id.fsym);
         tsymText = (EditText)findViewById(R.id.tsym);
         coinImage = (ImageView)findViewById(R.id.coinImage);
-        //cryptoCompareAPIButton = (ImageButton)findViewById(R.id.cryptoCompareButton);
 
-        GetCoinList(new VolleyCallback() {
+        //nav bar
+        mDrawerList = (ListView)findViewById(R.id.navList);
+
+        addDrawerItems();
+
+        // Immediately populate the coins list.
+        getCoinList(new VolleyCallback() {
             @Override
             public void onSuccess(JSONObject result) {
-                Log.d("GlassToeStudio", "onSuccess: ");
                 try {
-                    r_object = result.getJSONObject("Data");
-                    Log.d("GlassToeStudio", r_object.toString());
+                    allCoinData = result.getJSONObject("Data");
                 } catch (JSONException e) {
                     e.printStackTrace();
                 }
             }
         });
 
-        /*
-        cryptoCompareAPIButton.setOnClickListener(new View.OnClickListener(){
-            @Override
-            public void onClick(View v) {
-                Uri uri = Uri.parse("https://www.cryptocompare.com/api");
-                Intent intent = new Intent(Intent.ACTION_VIEW, uri);
-                startActivity(intent);
-            }
-        });
-*/
+        // The button click.
         getPriceButton.setOnClickListener(new View.OnClickListener(){
             @Override
             public void onClick(View v)  {
-                Log.d("GlassToeStudio", "Clicked");
-                fsym = fsymText.getText().toString();
-                tsym = tsymText.getText().toString();
+                //Toast.makeText(MainActivity.this, "Refreshing", Toast.LENGTH_LONG).show();
+                String fsym = fsymText.getText().toString();
+                String tsym = tsymText.getText().toString();
 
-                if(fsym.matches("")){
-                    fsym = "BTC";
-                }
-                if(tsym.matches("")){
-                    tsym = "USD";
-                }
+                // Empty argument, set to default BTC
+                if(fsym.matches("")){ fsym = "BTC"; }
+                // Empty argument, set to default USD
+                if(tsym.matches("")){ tsym = "USD"; }
 
-                if(fsym.matches("BTC")){
-                    coinID = "1182";
-                }else{
-                    coinID = "7605";
-                }
-                //GetCoinBySymbol();
-                GetCoinById(fsym);
+                fsym = fsym.toUpperCase();
+                tsym = tsym.toUpperCase();
+
+                fsymText.setText(fsym);
+                tsymText.setText(tsym);
+
+                getCoinInfo(fsym, tsym);
+
+                updateDrawerItems(fsym);
             }
         });
 
@@ -132,22 +120,103 @@ public class MainActivity extends AppCompatActivity {
         fab.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
-                Snackbar.make(view, "Replace with your own action", Snackbar.LENGTH_LONG)
+                Snackbar.make(view, "Refreshing Coin List", Snackbar.LENGTH_LONG)
                         .setAction("Action", null).show();
+                getCoinList(new VolleyCallback() {
+                    @Override
+                    public void onSuccess(JSONObject result) {
+                        try {
+                            allCoinData = result.getJSONObject("Data");
+                        } catch (JSONException e) {
+                            e.printStackTrace();
+                        }
+                    }
+                });
+                getPriceButton.callOnClick();
             }
         });
     }
 
-    private void GetCoinBySymbol(String fromSymbol) {
-        complete_url = url_string + fromSymbol + "&tsyms=" + tsym;
-        JsonObjectRequest jsonObjectRequest1 = new JsonObjectRequest(Request.Method.POST, complete_url,null,
+    private void addDrawerItems() {
+
+        String[] infoArray = {
+                "",
+                "Symbol: ",
+                "Name: ",
+                "Algorithm: ",
+                "ProofType: "
+        };
+        mAdapter = new ArrayAdapter<String>(this, android.R.layout.simple_list_item_1, infoArray);
+        mDrawerList.setAdapter(mAdapter);
+    }
+
+    private void updateDrawerItems(String fromSymbol) {
+
+        String Symbol = fromSymbol;
+        String Name = "N/A";
+        String Algorithm = "N/A";
+        String ProofType = "N/A";
+
+        JSONObject coinObject = null;
+        try {
+            coinObject = allCoinData.getJSONObject(fromSymbol);
+        } catch (JSONException e) {
+            e.printStackTrace();
+            return;
+        }
+
+        try {
+            Name = coinObject.getString("CoinName");
+        } catch (JSONException e) {
+            e.printStackTrace();
+        }
+        try {
+            Algorithm = coinObject.getString("Algorithm");
+        } catch (JSONException e) {
+            e.printStackTrace();
+        }
+        try {
+            ProofType = coinObject.getString("ProofType");
+        } catch (JSONException e) {
+            e.printStackTrace();
+        }
+
+        String[] infoArray = {
+                "",
+                String.format("Name: %s", Name),
+                String.format("Symbol: %s", Symbol),
+                String.format("Algorithm: %s", Algorithm),
+                String.format("ProofType: %s", ProofType)
+        };
+
+        mAdapter = new ArrayAdapter<String>(this, android.R.layout.simple_list_item_1, infoArray);
+        mDrawerList.setAdapter(mAdapter);
+    }
+
+    private void getCoinInfo(final String fromSymbol, String toSymbol) {
+        String coinImage_url = null;
+        try {
+            coinImage_url = String.format("https://www.cryptocompare.com%s", allCoinData.getJSONObject(fromSymbol).getString("ImageUrl"));
+            getCoinImage(coinImage_url);
+            getCoinBySymbol(fromSymbol, toSymbol);
+
+        } catch (JSONException e) {
+            e.printStackTrace();
+            getCoinImage(coinImage_url);
+            getCoinBySymbol(fromSymbol, toSymbol);
+        }
+    }
+
+    private void getCoinBySymbol(String fromSymbol, final String toSymbol) {
+        complete_url = String.format("https://min-api.cryptocompare.com/data/price?fsym=%s&tsyms=%s ",fromSymbol, toSymbol);
+        JsonObjectRequest jsonObjectRequest = new JsonObjectRequest(Request.Method.POST, complete_url,null,
                 new Response.Listener<JSONObject>(){
                     @Override
                     public void onResponse(JSONObject response){
-                        Toast.makeText(MainActivity.this, response.toString(), Toast.LENGTH_LONG).show();
+                        //Toast.makeText(MainActivity.this, response.toString(), Toast.LENGTH_LONG).show();
                         Log.d("GlassToeStudio", response.toString());
                         try {
-                            outPutTextView.setText(response.getString(tsym));
+                            outPutTextView.setText(response.getString(toSymbol));
                         } catch (JSONException e) {
                             e.printStackTrace();
                         }
@@ -161,10 +230,10 @@ public class MainActivity extends AppCompatActivity {
                 error.printStackTrace();
             }
         });
-        MySingleton.getInstance(MainActivity.this).addToRequestQueue(jsonObjectRequest1);
+        MySingleton.getInstance(MainActivity.this).addToRequestQueue(jsonObjectRequest);
     }
 
-    private void GetCoinList(final VolleyCallback callback) {
+    private void getCoinList(final VolleyCallback callback) {
         JsonObjectRequest jsonObjectRequest = new JsonObjectRequest(Request.Method.POST, COIN_LIST_URL,null,
                 new Response.Listener<JSONObject>(){
                     @Override
@@ -176,57 +245,34 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void onErrorResponse(VolleyError error) {
                 Toast.makeText(MainActivity.this, "Something Went Wrong", Toast.LENGTH_SHORT).show();
-                outPutTextView.setText("Something Went wrong");
                 error.printStackTrace();
             }
         });
         MySingleton.getInstance(MainActivity.this).addToRequestQueue(jsonObjectRequest);
     }
-    public interface VolleyCallback{
-        void onSuccess(JSONObject result);
+
+    private void getCoinImage(String image_url){
+        if(image_url == null){
+            coinImage.setImageResource(R.mipmap.ic_launcher_round);
+            return;
+        }
+        ImageRequest imageRequest = new ImageRequest(image_url,
+                new Response.Listener<Bitmap>() {
+                    @Override
+                    public void onResponse(Bitmap bitmap) {
+                        coinImage.setImageBitmap(bitmap);
+                    }
+                }, 150, 150, Bitmap.Config.ARGB_8888,
+                new Response.ErrorListener() {
+                    public void onErrorResponse(VolleyError error) {
+                        coinImage.setImageResource(R.drawable.ic_launcher_background);
+                    }
+                });
+        MySingleton.getInstance(MainActivity.this).addToRequestQueue(imageRequest);
     }
 
-    private void GetCoinById(final String symbol) {
-        String id = "";
-        try{
-            id = r_object.getJSONObject(symbol).getString("id");
-        }
-        catch(JSONException e){
-            e.printStackTrace();
-        }
-        if(fsym.matches("")){
-            coinID = "1182";
-        }
-        full_id_url_complete = full_id_url + coinID;
-        JsonObjectRequest jsonObjectRequest2 = new JsonObjectRequest(Request.Method.POST, full_id_url_complete,null,
-                new Response.Listener<JSONObject>(){
-                    @Override
-                    public void onResponse(JSONObject response){
-                        //Toast.makeText(MainActivity.this, response.toString(), Toast.LENGTH_SHORT).show();
-                        Log.d("GlassToeStudio", response.toString());
-                        try {
-                            //coinImage_url += response.getString("ImageUrl");
-                            coinImage_url = "https://www.cryptocompare.com";
-                            coinImage_url += r_object.getJSONObject(symbol).getString("ImageUrl");
-                            Log.d("GlassToeStudio", coinImage_url);
-                            //outPutTextView.setText(response.getString(tsym));
-                            GetImage();
-                            GetCoinBySymbol(fsym);
-
-                        } catch (JSONException e) {
-                            e.printStackTrace();
-                        }
-                    }
-                }
-                , new Response.ErrorListener() {
-            @Override
-            public void onErrorResponse(VolleyError error) {
-                Toast.makeText(MainActivity.this, "Something Went Wrong", Toast.LENGTH_SHORT).show();
-                outPutTextView.setText("Something Went wrong");
-                error.printStackTrace();
-            }
-        });
-        MySingleton.getInstance(MainActivity.this).addToRequestQueue(jsonObjectRequest2);
+    public interface VolleyCallback{
+        void onSuccess(JSONObject result);
     }
 
     @Override
@@ -247,25 +293,6 @@ public class MainActivity extends AppCompatActivity {
         if (id == R.id.action_settings) {
             return true;
         }
-
         return super.onOptionsItemSelected(item);
-    }
-
-    // Loads an image based on teh given coin (fsym)
-    private void GetImage(){
-        // Retrieves an image specified by the URL, displays it in the UI.
-        ImageRequest imageRequest = new ImageRequest(coinImage_url,
-                new Response.Listener<Bitmap>() {
-                    @Override
-                    public void onResponse(Bitmap bitmap) {
-                        coinImage.setImageBitmap(bitmap);
-                    }
-                }, 150, 150, Bitmap.Config.ARGB_8888,
-                new Response.ErrorListener() {
-                    public void onErrorResponse(VolleyError error) {
-                        coinImage.setImageResource(R.drawable.ic_launcher_background);
-                    }
-                });
-        MySingleton.getInstance(MainActivity.this).addToRequestQueue(imageRequest);
     }
 }
